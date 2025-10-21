@@ -1,2 +1,14 @@
-# php-chat-app
-This site is a personal project built to explore and improve web development skills. It features profiles, customizable themes, avatars, and chat functionality — all as a testing ground for learning and experimentation.
+### Open PHPMyAdmin
+
+```sql
+CREATE DATABASE nexus_chat;
+
+-- import all content from nexus_chat.sql
+-- import all content from inserts.sql
+```
+
+### How to use
+
+1. Turn on `Apache` & `MySQL` in `xampp-control-panel`
+
+2. Open program
