@@ -319,7 +319,7 @@ if($_SERVER['REQUEST_METHOD'] === 'POST') {
                     
                     <div class="flex flex-col items-center gap-4 mt-6">
                         <?php if (empty($img_id)): ?>
-                            <div class="w-24 h-24 rounded-full bg-primary-light flex items-center justify-center text-4xl font-bold text-white">
+                            <div class="w-24 h-24 rounded-full bg-primary-light flex items-center justify-center text-4xl font-bold text-white" id="avatar_container">
                                 <label><?php echo $initials; ?></label>
                             </div>
                         <?php else: ?>
@@ -529,20 +529,21 @@ if($_SERVER['REQUEST_METHOD'] === 'POST') {
             const file = event.target.files[0];
             if (!file) return;
 
-            if (!file.type.startsWith('image/')) {
+            if (!['image/jpeg', 'image/png'].includes(file.type)) {
                 alert('Wybierz poprawny plik graficzny (JPG lub PNG).');
                 return;
             }
 
             const reader = new FileReader();
             reader.onload = function (e) {
-                let avatarContainer = document.querySelector('.w-24.h-24.rounded-full');
+                let avatarContainer = document.getElementById('avatar_container');
                 
                 if (avatarContainer.tagName.toLowerCase() !== 'img') {
                     const img = document.createElement('img');
                     img.src = e.target.result;
                     img.alt = 'Avatar preview';
                     img.className = 'w-24 h-24 rounded-full object-cover';
+                    img.id = 'avatar_container';
                     avatarContainer.parentNode.replaceChild(img, avatarContainer);
                 } else {
                     avatarContainer.src = e.target.result;

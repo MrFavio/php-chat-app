@@ -87,6 +87,12 @@ if($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($result->num_rows === 0) {
                 $_SESSION['badAlert'] = "No user found with this code.";
             } else {
+                if ($code == $user['code']) {
+                    $_SESSION['badAlert'] = "You cannot add yourself as a friend.";
+                    header("Location: index.php");
+                    exit();
+                }
+                
                 $friend = $result->fetch_assoc();
                 $friend_id = $friend['user_id'];
     
