@@ -273,16 +273,51 @@ if($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     <script>
         <?php if(isset($_GET['person'])): ?>
+        let lastMessageId = 0;
+        let pollInterval = 2000;
+        let idleTime = 0;
+        let pollTimeout;
+
         function loadMessages() {
-            fetch("get_messages.php")
-                .then(response => response.text())
+            fetch(`get_messages.php?last_id=${lastMessageId}`)
+                .then(response => response.json())
                 .then(data => {
-                    document.getElementById("chat_box").innerHTML = data;
+                    const chatBox = document.getElementById("chat_box");
+                    
+                    if (data.html !== "") {
+                        chatBox.insertAdjacentHTML('beforeend', data.html);
+                        chatBox.scrollTop = chatBox.scrollHeight;
+                        lastMessageId = data.last_id;
+                        
+                        idleTime = 0;
+                        pollInterval = 2000; 
+                    } else {
+                        idleTime += pollInterval;
+                        
+                        if (idleTime > 120000) { 
+                            pollInterval = 10000;
+                        } else if (idleTime > 30000) {
+                            pollInterval = 5000;
+                        }
+                    }
+
+                    pollTimeout = setTimeout(loadMessages, pollInterval);
                 })
-                .catch(error => console.error("Błąd:", error));
+                .catch(error => {
+                    console.error("Błąd sieci:", error);
+                    pollTimeout = setTimeout(loadMessages, 5000); 
+                });
         }
+
         loadMessages();
-        setInterval(loadMessages, 1000);
+
+        const form = document.getElementById('chat_form');
+        form.addEventListener('submit', () => {
+            idleTime = 0;
+            pollInterval = 1000;
+            clearTimeout(pollTimeout);
+            setTimeout(loadMessages, 500);
+        });
 
         const textarea = document.getElementById('message_input');
 
@@ -290,8 +325,6 @@ if($_SERVER['REQUEST_METHOD'] === 'POST') {
             textarea.style.height = 'auto';
             textarea.style.height = textarea.scrollHeight + 'px';
         });
-
-        const form = document.getElementById('chat_form');
 
         textarea.addEventListener('keydown', function(e) {
             if (e.key === 'Enter' && !e.shiftKey) {
