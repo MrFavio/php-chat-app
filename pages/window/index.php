@@ -286,8 +286,8 @@ if($_SERVER['REQUEST_METHOD'] === 'POST') {
         <section class="flex-grow flex flex-col justify-between w-full">
             <?php if(isset($_GET['person'])): ?>
             <div id="chat_box" class="p-6 w-full h-[80vh] overflow-y-auto">
-                <!-- Messages will be loaded here via AJAX -->
-
+                <div class="w-full flex items-center justify-center mb-4"><button id="load_more" class="hidden bg-none text-primary-light hover:text-primary-dark px-4 py-2 rounded-xl mb-4 transition-colors">Load More</button></div>
+                <div id="messages_container"></div>
             </div>
             <form method="post" class="flex items-center gap-3 bg-zinc-800 p-3 shadow-md" id="chat_form">
                 <textarea name="message" id="message_input" rows="1" placeholder="Type your message..." class="flex-grow px-4 py-2 rounded-lg bg-zinc-700 text-white focus:outline-none focus:ring-2 focus:ring-primary-light placeholder:text-zinc-400 resize-none overflow-hidden min-h-[40px] max-h-48 leading-relaxed" autofocus></textarea>
@@ -305,20 +305,62 @@ if($_SERVER['REQUEST_METHOD'] === 'POST') {
         <?php if(isset($_GET['person'])): ?>
 
         let lastMessageTime = '0';
+        let firstMessageTime = '0';
         let lastSender = 0;
         let pollInterval = 2000;
         let idleTime = 0;
         let pollTimeout;
+        
+        const chatBox = document.getElementById("chat_box");
+        const messagesContainer = document.getElementById("messages_container");
+        const loadMoreButton = document.getElementById("load_more");
+
+        if (loadMoreButton) {
+            loadMoreButton.addEventListener("click", () => {
+                console.log("Load More button clicked");
+                
+                fetch(`get_messages.php?first_time=${firstMessageTime}&last_sender=${lastSender}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.html !== "") {
+                            messagesContainer.insertAdjacentHTML('afterbegin', data.html);
+                            
+                            if (data.first_time) {
+                                firstMessageTime = data.first_time;
+                            }
+
+                            if (data.count < 50) {
+                                loadMoreButton.style.display = "none";
+                            }
+                        } else {
+                            loadMoreButton.style.display = "none";
+                        }
+                    })
+                    .catch(error => console.error("Błąd podczas ładowania starszych wiadomości:", error));
+            });
+        }
 
         function loadMessages() {
             fetch(`get_messages.php?last_time=${lastMessageTime}&last_sender=${lastSender}`)
                 .then(response => response.json())
                 .then(data => {
-                    const chatBox = document.getElementById("chat_box");
-                    
                     if (data.html !== "") {
-                        chatBox.insertAdjacentHTML('beforeend', data.html);
-                        chatBox.scrollTop = chatBox.scrollHeight;
+                        messagesContainer.insertAdjacentHTML('beforeend', data.html);
+
+                        setTimeout(() => {
+                            chatBox.scrollTop = chatBox.scrollHeight;
+                        }, 1);
+
+                        if (firstMessageTime === '0' && data.first_time) {
+                            firstMessageTime = data.first_time;
+
+                            if (loadMoreButton && data.count ===50) {
+                                loadMoreButton.style.display = "block";
+                            } else if (loadMoreButton) {
+                                loadMoreButton.style.display = "none";
+                            }
+                        }
+
                         lastMessageTime = data.last_time;
                         lastSender = data.last_sender;
 
