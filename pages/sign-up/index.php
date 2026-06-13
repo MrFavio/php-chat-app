@@ -79,9 +79,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     break;
                 }
             }
+
+            $public_id = bin2hex(random_bytes(16));
             
-            $stmt = $db->prepare("INSERT INTO users (email, username, password, code) VALUES (?, ?, ?, ?)");
-            $stmt->bind_param("sssi", $email, $username, $password, $code);
+            $stmt = $db->prepare("INSERT INTO users (public_id, email, username, password, code) VALUES (UNHEX(?), ?, ?, ?, ?)");
+            $stmt->bind_param("ssssi", $public_id, $email, $username, $password, $code);
             if ($stmt->execute()) {
                 header("Location: ../window/index.php");
                 exit();

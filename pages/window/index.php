@@ -44,16 +44,30 @@ if (!$user) {
     exit();
 }
 
-if(isset($_GET['person']) && is_numeric($_GET['person'])) {
-    $stmt = $db->prepare("SELECT * FROM friends WHERE (user_one = ? AND user_two = ?) OR (user_two = ? AND user_one = ?)");
-    $stmt->bind_param("iiii", $user_id, $_GET['person'], $user_id, $_GET['person']);
+if(isset($_GET['person'])) {
+    $person_id = $_GET['person'];
+
+    $stmt = $db->prepare("SELECT user_id, public_id FROM users WHERE public_id = UNHEX(?)");
+    $stmt->bind_param("s", $person_id);
     $stmt->execute();
     $result = $stmt->get_result();
     if($result->num_rows === 0) {
         header("Location: index.php");
         exit();
     }
-    $user_two = $_GET['person'];
+    $person_res = $result->fetch_assoc();
+    $user_two = $person_res['user_id'];
+
+
+    $stmt = $db->prepare("SELECT * FROM friends WHERE (user_one = ? AND user_two = ?) OR (user_two = ? AND user_one = ?)");
+    $stmt->bind_param("iiii", $user_id, $user_two, $user_id, $user_two);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    if($result->num_rows === 0) {
+        header("Location: index.php");
+        exit();
+    }
+
     $_SESSION['user_two'] = $user_two;
 }
 
@@ -67,10 +81,11 @@ if($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmt->execute();
         $result = $stmt->get_result();
         if($result->num_rows > 0) {
-            $stmt = $db->prepare("INSERT INTO messages (content, created_at, user_id_from, user_id_to) VALUES (?, NOW(), ?, ?)");
-            $stmt->bind_param("sii", $message, $user_id, $user_two);
+            $mess_id = bin2hex(random_bytes(16));
+            $stmt = $db->prepare("INSERT INTO messages (mess_id, content, created_at, user_id_from, user_id_to) VALUES (UNHEX(?), ?, NOW(), ?, ?)");
+            $stmt->bind_param("ssii", $mess_id, $message, $user_id, $user_two);
             $stmt->execute();
-            header("Location: index.php?person=$user_two");
+            header("Location: index.php?person=$person_id");
             exit();
         }
     }
@@ -124,8 +139,22 @@ if($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
-    if (isset($_POST['unfriend_id']) && is_numeric($_POST['unfriend_id'])) {
+    if (isset($_POST['unfriend_id']) && is_string($_POST['unfriend_id'])) {
         $unfriend_id = $_POST['unfriend_id'];
+
+        $stmt = $db->prepare("SELECT user_id FROM users WHERE public_id = UNHEX(?)");
+        $stmt->bind_param("s", $unfriend_id);
+        $stmt->execute();
+        $result = $stmt->get_result();
+
+        if ($result->num_rows > 0) {
+            $unfriend_res = $result->fetch_assoc();
+            $unfriend_id = $unfriend_res['user_id'];
+        } else {
+            $_SESSION['badAlert'] = "Invalid friend ID.";
+            header("Location: index.php");
+            exit();
+        }
 
         $stmt = $db->prepare("SELECT * FROM friends WHERE (user_one = ? AND user_two = ?) OR (user_one = ? AND user_two = ?)");
         $stmt->bind_param("iiii", $user_id, $unfriend_id, $unfriend_id, $user_id);
@@ -182,7 +211,7 @@ if($_SERVER['REQUEST_METHOD'] === 'POST') {
     <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
     <link rel="shortcut icon" href="../../materials/nexus.png" type="image/x-icon">
 </head>
-<body class="min-h-screen flex flex-col">
+<body class="min-h-screen flex flex-col overflow-hidden">
     <?php if (isset($_SESSION['goodAlert'])): ?>
         <div class="fixed top-2.5 left-1/2 -translate-x-1/2 bg-green-500 text-white px-5 py-3 rounded-md shadow-md hidden z-[1000]" id="alert-box"><?php echo $_SESSION['goodAlert']; unset($_SESSION['goodAlert']); ?></div>
     <?php endif; ?>
@@ -223,12 +252,12 @@ if($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </h2>
                 <div class="space-y-4">
                     <?php
-                    $stmt = $db->prepare("SELECT u.user_id AS friend_id, u.username, u.img_id FROM friends f JOIN users u ON u.user_id = CASE WHEN f.user_one = ? THEN f.user_two ELSE f.user_one END WHERE f.user_one = ? OR f.user_two = ?");
+                    $stmt = $db->prepare("SELECT u.public_id AS friend_id, u.username, u.img_id FROM friends f JOIN users u ON u.user_id = CASE WHEN f.user_one = ? THEN f.user_two ELSE f.user_one END WHERE f.user_one = ? OR f.user_two = ?");
                     $stmt->bind_param("iii", $user_id, $user_id, $user_id);
                     $stmt->execute();
                     $result = $stmt->get_result();
                     while($row = $result->fetch_assoc()) {
-                        $friend_id = htmlspecialchars($row['friend_id']);
+                        $friend_id = htmlspecialchars(bin2hex($row['friend_id']));
                         $friend_username = htmlspecialchars($row['username']);
                         $initials = strtoupper(substr($friend_username, 0, 2));
                         $img_id = htmlspecialchars($row['img_id']);
@@ -256,7 +285,8 @@ if($_SERVER['REQUEST_METHOD'] === 'POST') {
         </section>
         <section class="flex-grow flex flex-col justify-between w-full">
             <?php if(isset($_GET['person'])): ?>
-            <div id="chat_box" class="p-6">
+            <div id="chat_box" class="p-6 w-full h-[80vh] overflow-y-auto">
+                <!-- Messages will be loaded here via AJAX -->
 
             </div>
             <form method="post" class="flex items-center gap-3 bg-zinc-800 p-3 shadow-md" id="chat_form">
@@ -273,13 +303,15 @@ if($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     <script>
         <?php if(isset($_GET['person'])): ?>
-        let lastMessageId = 0;
+
+        let lastMessageTime = '0';
+        let lastSender = 0;
         let pollInterval = 2000;
         let idleTime = 0;
         let pollTimeout;
 
         function loadMessages() {
-            fetch(`get_messages.php?last_id=${lastMessageId}`)
+            fetch(`get_messages.php?last_time=${lastMessageTime}&last_sender=${lastSender}`)
                 .then(response => response.json())
                 .then(data => {
                     const chatBox = document.getElementById("chat_box");
@@ -287,8 +319,9 @@ if($_SERVER['REQUEST_METHOD'] === 'POST') {
                     if (data.html !== "") {
                         chatBox.insertAdjacentHTML('beforeend', data.html);
                         chatBox.scrollTop = chatBox.scrollHeight;
-                        lastMessageId = data.last_id;
-                        
+                        lastMessageTime = data.last_time;
+                        lastSender = data.last_sender;
+
                         idleTime = 0;
                         pollInterval = 2000; 
                     } else {
@@ -332,7 +365,9 @@ if($_SERVER['REQUEST_METHOD'] === 'POST') {
                 form.submit();
             }
         });
+
         <?php endif; ?>
+
 
         function open_settings_menu() {
             const menu = document.getElementById('settings_menu');
